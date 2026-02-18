@@ -93,9 +93,20 @@ html2docx/
 ├── cmd/html2docx/      # Example CLI
 │   └── main.go
 ├── go.mod
-├── README.md
-└── LICENSE
-```
+
+## Outputs
+
+### DOCX
+
+![DOCX Output](img/docx.png)
+
+### PDF
+
+![PDF Output](img/pdf.png)
+
+### Markdown
+
+![Markdown Output](img/output.md)
 
 ## License
 
