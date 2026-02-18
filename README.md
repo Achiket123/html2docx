@@ -1,6 +1,6 @@
 # html2docx
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/achiket/html2docx.svg)](https://pkg.go.dev/github.com/achiket/html2docx)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Achiket123/html2docx.svg)](https://pkg.go.dev/github.com/Achiket123/html2docx)
 
 A pure Go library for converting raw HTML into **DOCX**, **PDF**, and **Markdown** — no external dependencies like LibreOffice required.
 
@@ -13,7 +13,7 @@ A pure Go library for converting raw HTML into **DOCX**, **PDF**, and **Markdown
 ## Installation
 
 ```bash
-go get github.com/achiket/html2docx/converter
+go get github.com/Achiket123/html2docx/converter
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ package main
 
 import (
     "fmt"
-    "github.com/achiket/html2docx/converter"
+    "github.com/Achiket123/html2docx/converter"
 )
 
 func main() {
@@ -93,6 +93,9 @@ html2docx/
 ├── cmd/html2docx/      # Example CLI
 │   └── main.go
 ├── go.mod
+├── README.md
+└── LICENSE
+```
 
 ## Outputs
 
@@ -106,7 +109,7 @@ html2docx/
 
 ### Markdown
 
-![Markdown Output](img/output.md)
+[View Markdown Output](img/output.md)
 
 ## License
 
