@@ -1,4 +1,4 @@
-module github.com/achiket/html2docx
+module github.com/Achiket123/html2docx
 
 go 1.25.5
 

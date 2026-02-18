@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/achiket/html2docx/converter"
+	"github.com/Achiket123/html2docx/converter"
 )
 
 func main() {
