@@ -39,6 +39,7 @@ func NewHTMLToPDFConverter() *HTMLToPDFConverter {
 // Convert parses and converts multiple HTML strings to PDF content.
 func (c *HTMLToPDFConverter) Convert(htmlContents []string) error {
 	for i, content := range htmlContents {
+		content = UnescapeUnicodeHTML(content)
 		root, err := html.Parse(strings.NewReader(content))
 		if err != nil {
 			return fmt.Errorf("failed to parse HTML index %d: %w", i, err)
@@ -88,7 +89,8 @@ func (c *HTMLToPDFConverter) walkPDF(n *html.Node) {
 		return
 	}
 
-	switch n.Data {
+	nodeType := EffectiveNodeType(n)
+	switch nodeType {
 	case "head", "title", "style", "script", "meta", "link":
 		return
 	case "h1":
@@ -105,7 +107,7 @@ func (c *HTMLToPDFConverter) walkPDF(n *html.Node) {
 		c.pdfHeading(n, 9)
 	case "p":
 		c.pdfBlock(n, 2, 3)
-	case "div", "section", "article", "nav", "main":
+	case "div", "section", "article", "nav", "main", "span":
 		c.processChildrenPDF(n)
 	case "center":
 		c.processCenterPDF(n)
@@ -332,19 +334,31 @@ func (c *HTMLToPDFConverter) processTablePDF(n *html.Node) {
 	var collectRows func(*html.Node)
 	collectRows = func(curr *html.Node) {
 		for ch := curr.FirstChild; ch != nil; ch = ch.NextSibling {
-			if ch.Type == html.ElementNode && ch.Data == "tr" {
-				var row []cellData
-				for cell := ch.FirstChild; cell != nil; cell = cell.NextSibling {
-					if cell.Type == html.ElementNode && (cell.Data == "td" || cell.Data == "th") {
-						text := strings.TrimSpace(ExtractText(cell))
-						row = append(row, cellData{text: text, isHeader: cell.Data == "th"})
+			if ch.Type == html.ElementNode {
+				if EffectiveNodeType(ch) == "tr" {
+					var row []cellData
+					var collectCells func(*html.Node)
+					collectCells = func(cellContainer *html.Node) {
+						for cell := cellContainer.FirstChild; cell != nil; cell = cell.NextSibling {
+							if cell.Type == html.ElementNode {
+								cellType := EffectiveNodeType(cell)
+								if cellType == "td" || cellType == "th" {
+									text := strings.TrimSpace(ExtractText(cell))
+									row = append(row, cellData{text: text, isHeader: cellType == "th"})
+								} else if cellType == "div" || cellType == "span" {
+									collectCells(cell)
+								}
+							}
+						}
 					}
+					collectCells(ch)
+
+					if len(row) > 0 {
+						rows = append(rows, row)
+					}
+				} else if ch.FirstChild != nil {
+					collectRows(ch)
 				}
-				if len(row) > 0 {
-					rows = append(rows, row)
-				}
-			} else if ch.FirstChild != nil {
-				collectRows(ch)
 			}
 		}
 	}
@@ -387,12 +401,12 @@ func (c *HTMLToPDFConverter) processTablePDF(n *html.Node) {
 func (c *HTMLToPDFConverter) processTableChildrenAsFlow(n *html.Node) {
 	for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
 		if ch.Type == html.ElementNode {
-			switch ch.Data {
+			switch EffectiveNodeType(ch) {
 			case "tr":
 				c.processTableChildrenAsFlow(ch)
 			case "td", "th":
 				c.processChildrenPDF(ch)
-			case "thead", "tbody", "tfoot":
+			case "thead", "tbody", "tfoot", "div", "span":
 				c.processTableChildrenAsFlow(ch)
 			default:
 				c.walkPDF(ch)
@@ -408,7 +422,7 @@ func (c *HTMLToPDFConverter) processListPDF(n *html.Node, ordered bool) {
 	indent := 10.0
 
 	for li := n.FirstChild; li != nil; li = li.NextSibling {
-		if li.Type == html.ElementNode && li.Data == "li" {
+		if li.Type == html.ElementNode && EffectiveNodeType(li) == "li" {
 			c.pdf.SetX(lMargin + indent)
 			c.applyFont()
 			if ordered {

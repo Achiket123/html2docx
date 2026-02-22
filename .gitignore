@@ -1,0 +1,14 @@
+# Test Artifacts
+output.md
+output.docx
+output.pdf
+test.html
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out

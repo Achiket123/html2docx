@@ -39,6 +39,7 @@ func uint64Ptr(u uint64) *uint64 { return &u }
 // Convert parses and converts multiple HTML strings to DOCX content.
 func (c *HTMLToDocxConverter) Convert(htmlContents []string) error {
 	for i, content := range htmlContents {
+		content = UnescapeUnicodeHTML(content)
 		root, err := html.Parse(strings.NewReader(content))
 		if err != nil {
 			return fmt.Errorf("failed to parse index %d: %w", i, err)
@@ -79,7 +80,8 @@ func (c *HTMLToDocxConverter) walk(n *html.Node, para *document.Paragraph, conta
 			}
 		}
 
-		switch n.Data {
+		nodeType := EffectiveNodeType(n)
+		switch nodeType {
 		case "header":
 			hdr := c.doc.AddHeader()
 			c.doc.BodySection().SetHeader(hdr, wml.ST_HdrFtrDefault)
@@ -93,20 +95,23 @@ func (c *HTMLToDocxConverter) walk(n *html.Node, para *document.Paragraph, conta
 		case "center":
 			c.processChildren(n, para, container, wml.ST_JcCenter)
 			return
-		case "p", "div", "section", "article", "nav", "main", "body", "html":
+		case "p", "section", "article", "nav", "main", "body", "html":
 			p := c.createParagraph(container)
 			p.Properties().SetAlignment(currentAlign)
 			c.processChildren(n, &p, container, currentAlign)
 			return
+		case "div", "span":
+			c.processChildren(n, para, container, align)
+			return
 		case "h1", "h2", "h3", "h4", "h5", "h6":
 			p := c.createParagraph(container)
-			p.SetStyle("Heading" + n.Data[1:])
+			p.SetStyle("Heading" + nodeType[1:])
 			p.Properties().SetAlignment(currentAlign)
 
 			c.processChildren(n, &p, container, currentAlign)
 
 			size := 12.0
-			switch n.Data {
+			switch nodeType {
 			case "h1":
 				size = 24
 			case "h2":
@@ -134,7 +139,7 @@ func (c *HTMLToDocxConverter) walk(n *html.Node, para *document.Paragraph, conta
 			c.processTable(n, currentAlign)
 			return
 		case "ul", "ol":
-			c.processList(n, n.Data == "ol", container, currentAlign)
+			c.processList(n, nodeType == "ol", container, currentAlign)
 			return
 		case "b", "strong":
 			c.formatted(n, para, "bold", container, currentAlign)
@@ -217,40 +222,52 @@ func (c *HTMLToDocxConverter) processTable(n *html.Node, align wml.ST_Jc) {
 	var walkTable func(*html.Node)
 	walkTable = func(curr *html.Node) {
 		for ch := curr.FirstChild; ch != nil; ch = ch.NextSibling {
-			if ch.Type == html.ElementNode && ch.Data == "tr" {
-				row := table.AddRow()
-				trAttrs := GetAttrMap(ch.Attr)
+			if ch.Type == html.ElementNode {
+				chType := EffectiveNodeType(ch)
+				if chType == "tr" {
+					row := table.AddRow()
+					trAttrs := GetAttrMap(ch.Attr)
 
-				for cellNode := ch.FirstChild; cellNode != nil; cellNode = cellNode.NextSibling {
-					if cellNode.Type == html.ElementNode && (cellNode.Data == "td" || cellNode.Data == "th") {
-						cell := row.AddCell()
-						tdAttrs := GetAttrMap(cellNode.Attr)
+					var collectCells func(*html.Node)
+					collectCells = func(cellContainer *html.Node) {
+						for cellNode := cellContainer.FirstChild; cellNode != nil; cellNode = cellNode.NextSibling {
+							if cellNode.Type == html.ElementNode {
+								cellType := EffectiveNodeType(cellNode)
+								if cellType == "td" || cellType == "th" {
+									cell := row.AddCell()
+									tdAttrs := GetAttrMap(cellNode.Attr)
 
-						bg := ""
-						if val, ok := tdAttrs["bgcolor"]; ok {
-							bg = val
-						} else if val, ok := trAttrs["bgcolor"]; ok {
-							bg = val
-						}
-						if bg != "" {
-							cell.Properties().SetShading(wml.ST_ShdSolid, parseHexColor(bg), color.Auto)
-						}
+									bg := ""
+									if val, ok := tdAttrs["bgcolor"]; ok {
+										bg = val
+									} else if val, ok := trAttrs["bgcolor"]; ok {
+										bg = val
+									}
+									if bg != "" {
+										cell.Properties().SetShading(wml.ST_ShdSolid, parseHexColor(bg), color.Auto)
+									}
 
-						p := cell.AddParagraph()
-						cellAlign := wml.ST_JcLeft
-						if tdAttrs["align"] == "center" {
-							cellAlign = wml.ST_JcCenter
-						}
-						p.Properties().SetAlignment(cellAlign)
+									p := cell.AddParagraph()
+									cellAlign := wml.ST_JcLeft
+									if tdAttrs["align"] == "center" {
+										cellAlign = wml.ST_JcCenter
+									}
+									p.Properties().SetAlignment(cellAlign)
 
-						if cellNode.Data == "th" {
-							p.AddRun().Properties().SetBold(true)
+									if cellType == "th" {
+										p.AddRun().Properties().SetBold(true)
+									}
+									c.processChildren(cellNode, &p, nil, cellAlign)
+								} else if cellType == "div" || cellType == "span" {
+									collectCells(cellNode)
+								}
+							}
 						}
-						c.processChildren(cellNode, &p, nil, cellAlign)
 					}
+					collectCells(ch)
+				} else if ch.FirstChild != nil {
+					walkTable(ch)
 				}
-			} else if ch.FirstChild != nil {
-				walkTable(ch)
 			}
 		}
 	}
@@ -333,7 +350,7 @@ func (c *HTMLToDocxConverter) formatted(n *html.Node, para *document.Paragraph, 
 func (c *HTMLToDocxConverter) processList(n *html.Node, ordered bool, container interface{}, align wml.ST_Jc) {
 	index := 1
 	for li := n.FirstChild; li != nil; li = li.NextSibling {
-		if li.Type == html.ElementNode && li.Data == "li" {
+		if li.Type == html.ElementNode && EffectiveNodeType(li) == "li" {
 			p := c.createParagraph(container)
 			p.Properties().SetAlignment(align)
 			prefix := "• "

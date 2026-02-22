@@ -66,3 +66,27 @@ func ParseHexToRGB(hex string) (int, int, int) {
 	b, _ := strconv.ParseInt(hex[4:6], 16, 32)
 	return int(r), int(g), int(b)
 }
+
+// EffectiveNodeType returns the semantic HTML tag name for a node.
+// If the node has a "data-slate-type" attribute, it uses that value,
+// otherwise it falls back to the native html.Node Data (tag name).
+func EffectiveNodeType(n *html.Node) string {
+	if n.Type != html.ElementNode {
+		return n.Data
+	}
+	slateType := GetAttrValue(n.Attr, "data-slate-type")
+	if slateType != "" {
+		return slateType
+	}
+	return n.Data
+}
+
+// UnescapeUnicodeHTML unescapes JSON unicode sequences back to HTML characters.
+// This is critical for supporting tools that export DOM structures as JSON strings (like Slate.js raw data).
+func UnescapeUnicodeHTML(s string) string {
+	s = strings.ReplaceAll(s, "\\u003c", "<")
+	s = strings.ReplaceAll(s, "\\u003e", ">")
+	s = strings.ReplaceAll(s, "\\\"", "\"")
+	s = strings.ReplaceAll(s, "\\n", "\n")
+	return s
+}

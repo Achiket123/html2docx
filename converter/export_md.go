@@ -22,6 +22,7 @@ func NewHTMLToMarkdownConverter() *HTMLToMarkdownConverter {
 // Convert parses and converts multiple HTML strings to a Markdown string.
 func (c *HTMLToMarkdownConverter) Convert(htmlContents []string) (string, error) {
 	for i, content := range htmlContents {
+		content = UnescapeUnicodeHTML(content)
 		root, err := html.Parse(strings.NewReader(content))
 		if err != nil {
 			return "", fmt.Errorf("failed to parse HTML: %w", err)
@@ -44,7 +45,7 @@ func (c *HTMLToMarkdownConverter) walkMD(n *html.Node) {
 	}
 
 	if n.Type == html.ElementNode {
-		switch n.Data {
+		switch EffectiveNodeType(n) {
 		case "h1":
 			c.markdown.WriteString("\n# ")
 			c.processChildrenMD(n)
@@ -139,6 +140,10 @@ func (c *HTMLToMarkdownConverter) walkMD(n *html.Node) {
 			c.processChildrenMD(n)
 			c.markdown.WriteString("\n\n")
 			return
+		case "div", "span":
+			// transparently process children
+			c.processChildrenMD(n)
+			return
 		}
 	}
 
@@ -154,7 +159,7 @@ func (c *HTMLToMarkdownConverter) processChildrenMD(n *html.Node) {
 func (c *HTMLToMarkdownConverter) processListMD(n *html.Node, ordered bool) {
 	index := 1
 	for li := n.FirstChild; li != nil; li = li.NextSibling {
-		if li.Type == html.ElementNode && li.Data == "li" {
+		if li.Type == html.ElementNode && EffectiveNodeType(li) == "li" {
 			indent := strings.Repeat("  ", c.listDepth)
 			if ordered {
 				c.markdown.WriteString(fmt.Sprintf("%s%d. ", indent, index))
@@ -180,17 +185,28 @@ func (c *HTMLToMarkdownConverter) processTableMD(n *html.Node) {
 	collectRows = func(node *html.Node) {
 		for ch := node.FirstChild; ch != nil; ch = ch.NextSibling {
 			if ch.Type == html.ElementNode {
-				if ch.Data == "tr" {
+				if EffectiveNodeType(ch) == "tr" {
 					var cells []*html.Node
 					header := false
-					for cell := ch.FirstChild; cell != nil; cell = cell.NextSibling {
-						if cell.Type == html.ElementNode && (cell.Data == "td" || cell.Data == "th") {
-							cells = append(cells, cell)
-							if cell.Data == "th" {
-								header = true
+
+					var collectCells func(*html.Node)
+					collectCells = func(cellNode *html.Node) {
+						for cell := cellNode.FirstChild; cell != nil; cell = cell.NextSibling {
+							if cell.Type == html.ElementNode {
+								cellType := EffectiveNodeType(cell)
+								if cellType == "td" || cellType == "th" {
+									cells = append(cells, cell)
+									if cellType == "th" {
+										header = true
+									}
+								} else if cellType == "div" || cellType == "span" {
+									collectCells(cell)
+								}
 							}
 						}
 					}
+					collectCells(ch)
+
 					if len(cells) > 0 {
 						rows = append(rows, cells)
 						isHeader = append(isHeader, header)
